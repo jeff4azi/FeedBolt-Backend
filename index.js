@@ -2,11 +2,21 @@ import express from "express";
 import { v2 as cloudinary } from "cloudinary";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import cors from "cors";
 
 dotenv.config();
 
 const app = express();
-app.use(express.json());
+
+app.use(
+  cors({
+    origin: "*", // during development — lock this down before going to production
+    methods: ["GET", "POST", "DELETE", "PUT", "PATCH"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
+
+app.use(express.json({ limit: "20mb" }));
 
 // Cloudinary config
 cloudinary.config({
