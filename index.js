@@ -26,6 +26,51 @@ app.get("/", (req, res) => {
   res.send("Server is running!");
 });
 
+app.post("/upload-image", async (req, res) => {
+  const { file, mimeType, fileName } = req.body;
+
+  if (!file) return res.status(400).json({ error: "No file provided" });
+
+  // Supported image mime types — reject anything else
+  const allowedMimeTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+    "image/avif",
+  ];
+
+  const resolvedMime = mimeType ?? "image/jpeg";
+
+  if (!allowedMimeTypes.includes(resolvedMime)) {
+    return res
+      .status(400)
+      .json({ error: `Unsupported file type: ${resolvedMime}` });
+  }
+
+  try {
+    // Build the data URI — Cloudinary accepts this natively
+    const dataUri = `data:${resolvedMime};base64,${file}`;
+
+    const uploadResult = await cloudinary.uploader.upload(dataUri, {
+      public_id: fileName ? fileName.replace(/\.[^/.]+$/, "") : undefined, // strip extension, Cloudinary adds its own
+      resource_type: "image",
+    });
+
+    res.status(200).json({
+      image_url: uploadResult.secure_url,
+      image_public_id: uploadResult.public_id,
+    });
+  } catch (error) {
+    console.error("Cloudinary upload error:", error);
+    res.status(500).json({ error: error.message ?? "Upload failed" });
+  }
+});
+
 app.delete("/delete-post-image", async (req, res) => {
   const { postId } = req.body;
 
