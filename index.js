@@ -3,6 +3,7 @@ import { v2 as cloudinary } from "cloudinary";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import cors from "cors";
+import webpush from "web-push";
 
 dotenv.config();
 
@@ -146,8 +147,6 @@ app.delete("/delete-avatar-image", async (req, res) => {
     res.status(500).json({ error: "Something went wrong" });
   }
 });
-
-import webpush from "web-push";
 
 webpush.setVapidDetails(
   process.env.VAPID_MAILTO,
