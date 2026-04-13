@@ -147,7 +147,7 @@ app.delete("/delete-avatar-image", async (req, res) => {
   }
 });
 
-const webpush = require("web-push");
+import webpush from "web-push";
 
 webpush.setVapidDetails(
   process.env.VAPID_MAILTO,
@@ -192,8 +192,6 @@ app.post("/send-push", async (req, res) => {
     res.status(500).json({ error: "Failed to send push" });
   }
 });
-
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
