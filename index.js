@@ -116,5 +116,37 @@ app.delete("/delete-post-image", async (req, res) => {
   }
 });
 
+app.delete("/delete-avatar-image", async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: "userId is required" });
+
+  try {
+    const { data: profile, error: fetchError } = await supabase
+      .from("profiles")
+      .select("avatar_public_id")
+      .eq("id", userId)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!profile?.avatar_public_id)
+      return res.status(404).json({ error: "No avatar found" });
+
+    await cloudinary.uploader.destroy(profile.avatar_public_id);
+
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({ avatar_url: null, avatar_public_id: null })
+      .eq("id", userId);
+
+    if (updateError) throw updateError;
+
+    res.json({ message: "Avatar deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
