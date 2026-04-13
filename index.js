@@ -147,6 +147,53 @@ app.delete("/delete-avatar-image", async (req, res) => {
   }
 });
 
+const webpush = require("web-push");
+
+webpush.setVapidDetails(
+  process.env.VAPID_MAILTO,
+  process.env.VAPID_PUBLIC_KEY,
+  process.env.VAPID_PRIVATE_KEY,
+);
+
+app.post("/send-push", async (req, res) => {
+  const { userId, title, body, url } = req.body;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+
+  try {
+    const { data: subs } = await supabase
+      .from("push_subscriptions")
+      .select("subscription")
+      .eq("user_id", userId);
+
+    if (!subs?.length) return res.json({ message: "No subscriptions" });
+
+    const payload = JSON.stringify({ title, body, url });
+
+    await Promise.allSettled(
+      subs.map((row) =>
+        webpush
+          .sendNotification(row.subscription, payload)
+          .catch(async (err) => {
+            // Remove expired/invalid subscriptions
+            if (err.statusCode === 410 || err.statusCode === 404) {
+              await supabase
+                .from("push_subscriptions")
+                .delete()
+                .eq("user_id", userId)
+                .eq("subscription", row.subscription);
+            }
+          }),
+      ),
+    );
+
+    res.json({ message: "Sent" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to send push" });
+  }
+});
+
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
