@@ -3,7 +3,6 @@ import { v2 as cloudinary } from "cloudinary";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import cors from "cors";
-import webpush from "web-push";
 
 dotenv.config();
 
@@ -42,7 +41,6 @@ app.post("/upload-image", async (req, res) => {
 
   if (!file) return res.status(400).json({ error: "No file provided" });
 
-  // Supported image mime types — reject anything else
   const allowedMimeTypes = [
     "image/jpeg",
     "image/png",
@@ -64,11 +62,10 @@ app.post("/upload-image", async (req, res) => {
   }
 
   try {
-    // Build the data URI — Cloudinary accepts this natively
     const dataUri = `data:${resolvedMime};base64,${file}`;
 
     const uploadResult = await cloudinary.uploader.upload(dataUri, {
-      public_id: fileName ? fileName.replace(/\.[^/.]+$/, "") : undefined, // strip extension, Cloudinary adds its own
+      public_id: fileName ? fileName.replace(/\.[^/.]+$/, "") : undefined,
       resource_type: "image",
     });
 
@@ -88,7 +85,6 @@ app.delete("/delete-post-image", async (req, res) => {
   if (!postId) return res.status(400).json({ error: "postId is required" });
 
   try {
-    // 1️⃣ Fetch post from Supabase
     const { data: post, error: fetchError } = await supabase
       .from("posts")
       .select("image_public_id")
@@ -99,10 +95,8 @@ app.delete("/delete-post-image", async (req, res) => {
     if (!post?.image_public_id)
       return res.status(404).json({ error: "No image found" });
 
-    // 2️⃣ Delete from Cloudinary
     await cloudinary.uploader.destroy(post.image_public_id);
 
-    // 3️⃣ Update Supabase
     const { error: updateError } = await supabase
       .from("posts")
       .update({ image_url: null, image_public_id: null })
@@ -145,50 +139,6 @@ app.delete("/delete-avatar-image", async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Something went wrong" });
-  }
-});
-
-webpush.setVapidDetails(
-  process.env.VAPID_MAILTO,
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY,
-);
-
-app.post("/send-push", async (req, res) => {
-  const { userId, title, body, url } = req.body;
-  if (!userId) return res.status(400).json({ error: "userId required" });
-
-  try {
-    const { data: subs } = await supabase
-      .from("push_subscriptions")
-      .select("subscription")
-      .eq("user_id", userId);
-
-    if (!subs?.length) return res.json({ message: "No subscriptions" });
-
-    const payload = JSON.stringify({ title, body, url });
-
-    await Promise.allSettled(
-      subs.map((row) =>
-        webpush
-          .sendNotification(row.subscription, payload)
-          .catch(async (err) => {
-            // Remove expired/invalid subscriptions
-            if (err.statusCode === 410 || err.statusCode === 404) {
-              await supabase
-                .from("push_subscriptions")
-                .delete()
-                .eq("user_id", userId)
-                .eq("subscription", row.subscription);
-            }
-          }),
-      ),
-    );
-
-    res.json({ message: "Sent" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to send push" });
   }
 });
 
