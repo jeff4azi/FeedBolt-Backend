@@ -142,5 +142,48 @@ app.delete("/delete-avatar-image", async (req, res) => {
   }
 });
 
+app.delete("/delete-posts", async (req, res) => {
+  const { postIds } = req.body;
+
+  if (!postIds || !Array.isArray(postIds) || postIds.length === 0) {
+    return res.status(400).json({ error: "postIds array is required" });
+  }
+
+  try {
+    // First, get all posts with their image_public_ids to delete from Cloudinary
+    const { data: posts, error: fetchError } = await supabase
+      .from("posts")
+      .select("id, image_public_id")
+      .in("id", postIds);
+
+    if (fetchError) throw fetchError;
+
+    // Delete images from Cloudinary for posts that have them
+    const imageDeletePromises = posts
+      .filter((post) => post.image_public_id)
+      .map((post) => cloudinary.uploader.destroy(post.image_public_id));
+
+    await Promise.all(imageDeletePromises);
+
+    // Delete posts from Supabase
+    const { error: deleteError } = await supabase
+      .from("posts")
+      .delete()
+      .in("id", postIds);
+
+    if (deleteError) throw deleteError;
+
+    res.json({
+      message: `Successfully deleted ${postIds.length} posts`,
+      deletedCount: postIds.length,
+    });
+  } catch (error) {
+    console.error("Error deleting posts:", error);
+    res
+      .status(500)
+      .json({ error: "Something went wrong while deleting posts" });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
