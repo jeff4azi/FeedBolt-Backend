@@ -103,7 +103,7 @@ app.delete("/delete-post-image", async (req, res) => {
   try {
     const { data: post, error: fetchError } = await supabase
       .from("posts")
-      .select("image_public_id")
+      .select("image_public_id, is_pdf")
       .eq("id", postId)
       .single();
 
@@ -111,7 +111,19 @@ app.delete("/delete-post-image", async (req, res) => {
     if (!post?.image_public_id)
       return res.status(404).json({ error: "No image found" });
 
-    await cloudinary.uploader.destroy(post.image_public_id);
+    // Always delete the preview image
+    await cloudinary.uploader.destroy(post.image_public_id, {
+      resource_type: "image",
+    });
+
+    // For PDF posts, also delete the raw PDF asset (same public_id, different resource_type)
+    if (post.is_pdf) {
+      await cloudinary.uploader
+        .destroy(post.image_public_id, {
+          resource_type: "raw",
+        })
+        .catch(() => {}); // best-effort
+    }
 
     const { error: updateError } = await supabase
       .from("posts")
@@ -169,7 +181,7 @@ app.delete("/delete-posts", async (req, res) => {
     // First, get all posts with their image_public_ids to delete from Cloudinary
     const { data: posts, error: fetchError } = await supabase
       .from("posts")
-      .select("id, image_public_id")
+      .select("id, image_public_id, is_pdf")
       .in("id", postIds);
 
     if (fetchError) throw fetchError;
@@ -177,7 +189,21 @@ app.delete("/delete-posts", async (req, res) => {
     // Delete images from Cloudinary for posts that have them
     const imageDeletePromises = posts
       .filter((post) => post.image_public_id)
-      .map((post) => cloudinary.uploader.destroy(post.image_public_id));
+      .flatMap((post) => {
+        const deleteImage = cloudinary.uploader.destroy(post.image_public_id, {
+          resource_type: "image",
+        });
+        // For PDF posts also delete the raw asset
+        if (post.is_pdf) {
+          return [
+            deleteImage,
+            cloudinary.uploader
+              .destroy(post.image_public_id, { resource_type: "raw" })
+              .catch(() => {}),
+          ];
+        }
+        return [deleteImage];
+      });
 
     await Promise.all(imageDeletePromises);
 
