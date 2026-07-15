@@ -3,6 +3,8 @@ import { v2 as cloudinary } from "cloudinary";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import cors from "cors";
+import multer from "multer";
+import { Readable } from "stream";
 
 dotenv.config();
 
@@ -198,6 +200,110 @@ app.delete("/delete-posts", async (req, res) => {
       .json({ error: "Something went wrong while deleting posts" });
   }
 });
+
+// ── Multer (memory storage, used for PDF uploads) ────────────────────────────
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  fileFilter: (_req, file, cb) => {
+    if (file.fieldname === "pdf" && file.mimetype !== "application/pdf") {
+      return cb(new Error("Only PDF files are accepted for the pdf field."));
+    }
+    if (file.fieldname === "preview" && !file.mimetype.startsWith("image/")) {
+      return cb(
+        new Error("Only image files are accepted for the preview field."),
+      );
+    }
+    cb(null, true);
+  },
+});
+
+// Helper: upload a Buffer to Cloudinary via a stream
+function uploadBufferToCloudinary(buffer, options) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(options, (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+    Readable.from(buffer).pipe(stream);
+  });
+}
+
+/**
+ * POST /upload-pdf
+ * multipart/form-data fields:
+ *   pdf      – the PDF file (required)
+ *   preview  – a JPEG preview/cover image (required)
+ *   content  – post text (required)
+ *   userId   – Supabase user id (required)
+ */
+app.post(
+  "/upload-pdf",
+  upload.fields([
+    { name: "pdf", maxCount: 1 },
+    { name: "preview", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const { content, userId } = req.body;
+    const pdfFile = req.files?.pdf?.[0];
+    const previewFile = req.files?.preview?.[0];
+
+    if (!pdfFile)
+      return res.status(400).json({ error: "PDF file is required." });
+    if (!previewFile)
+      return res.status(400).json({ error: "Preview image is required." });
+    if (!content?.trim())
+      return res.status(400).json({ error: "Post content is required." });
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+
+    try {
+      // Build a shared public_id base so preview (.jpg) and pdf (.pdf) share the same name
+      const baseName = `pdf_${userId}_${Date.now()}`;
+
+      // 1. Upload preview image as .jpg (resource_type: image)
+      const previewResult = await uploadBufferToCloudinary(previewFile.buffer, {
+        public_id: baseName,
+        resource_type: "image",
+        format: "jpg",
+      });
+
+      // 2. Upload the actual PDF with the SAME public_id but resource_type: raw
+      //    Cloudinary stores it at <baseName>.pdf
+      await uploadBufferToCloudinary(pdfFile.buffer, {
+        public_id: baseName,
+        resource_type: "raw",
+        format: "pdf",
+      });
+
+      // 3. Insert the post into Supabase
+      //    image_url  → the preview .jpg URL  (pdfUtils.getPdfUrl swaps .jpg → .pdf)
+      //    image_public_id → shared base name
+      //    is_pdf     → true
+      const { data: postData, error: insertError } = await supabase
+        .from("posts")
+        .insert({
+          user_id: userId,
+          content: content.trim(),
+          image_url: previewResult.secure_url,
+          image_public_id: baseName,
+          is_pdf: true,
+        })
+        .select("id")
+        .single();
+
+      if (insertError) throw insertError;
+
+      res.status(200).json({
+        post_id: postData.id,
+        image_url: previewResult.secure_url,
+        image_public_id: baseName,
+      });
+    } catch (err) {
+      console.error("PDF upload error:", err);
+      res.status(500).json({ error: err.message ?? "PDF upload failed." });
+    }
+  },
+);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
