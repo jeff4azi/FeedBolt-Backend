@@ -244,7 +244,7 @@ app.post(
     { name: "preview", maxCount: 1 },
   ]),
   async (req, res) => {
-    const { content, userId } = req.body;
+    const { content, userId, title } = req.body;
     const pdfFile = req.files?.pdf?.[0];
     const previewFile = req.files?.preview?.[0];
 
@@ -284,6 +284,7 @@ app.post(
         .insert({
           user_id: userId,
           content: content.trim(),
+          title: title?.trim() || null,
           image_url: previewResult.secure_url,
           image_public_id: baseName,
           is_pdf: true,
