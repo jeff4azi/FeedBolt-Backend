@@ -268,8 +268,8 @@ app.post(
       });
 
       // 2. Upload the actual PDF with the SAME public_id but resource_type: raw
-      //    Cloudinary stores it at <baseName>.pdf
-      await uploadBufferToCloudinary(pdfFile.buffer, {
+      //    Cloudinary stores it at <baseName>.pdf under raw/upload/
+      const pdfResult = await uploadBufferToCloudinary(pdfFile.buffer, {
         public_id: baseName,
         resource_type: "raw",
         format: "pdf",
@@ -298,6 +298,7 @@ app.post(
         post_id: postData.id,
         image_url: previewResult.secure_url,
         image_public_id: baseName,
+        pdf_url: pdfResult.secure_url,
       });
     } catch (err) {
       console.error("PDF upload error:", err);
